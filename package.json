@@ -2,6 +2,7 @@
   "name": "5chneo",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.15.1",
   "description": "5chのお絵かき機能でPaintBBS NEOを使うブックマークレット",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -12,4 +13,3 @@
     "typescript": "^5.9.2"
   }
 }
-

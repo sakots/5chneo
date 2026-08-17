@@ -19,9 +19,9 @@ codex使用。
 ## 開発
 
 ```console
-npm install
-npm run check
-npm run build
+pnpm install
+pnpm check
+pnpm build
 ```
 
 TypeScriptのソースは [`src/index.ts`](src/index.ts) です。ビルドすると、配信用スクリプトとブックマークレットが `dist/` に生成されます。
