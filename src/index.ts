@@ -232,7 +232,11 @@ function createFrameDocument(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="${DEFAULT_NEO_BASE}neo.css">
-  <style>html,body{margin:0;padding:0;background:#f7f7f7;overflow:auto}</style>
+  <style>
+    html,body{margin:0;padding:0;background:#f7f7f7;overflow:auto}
+    #fivech-neo-color-picker{align-items:center;display:inline-flex;gap:4px;margin-left:8px}
+    #fivech-neo-color-picker input[type="color"]{appearance:auto;background:transparent;border:0;cursor:pointer;height:22px;padding:0;width:30px}
+  </style>
 </head>
 <body>
   <div class="neo-applet-paintbbs" data-width="600" data-height="430"></div>
@@ -268,6 +272,28 @@ function createFrameDocument(): string {
         send("fullscreen", { fullscreen: Boolean(event.detail && event.detail.fullscreen) });
       });
 
+      const addColorPicker = () => {
+        const footer = document.getElementById("neo-footerButtons");
+        if (!footer || document.getElementById("fivech-neo-color-picker")) return;
+
+        const label = document.createElement("label");
+        label.id = "fivech-neo-color-picker";
+        label.append("パレット");
+
+        const input = document.createElement("input");
+        input.type = "color";
+        input.title = "選択中のパレットへ色を取り込む";
+        input.setAttribute("aria-label", input.title);
+        const currentColor = Neo.painter && Neo.painter.foregroundColor;
+        if (typeof currentColor === "string" && /^#[0-9a-f]{6}$/i.test(currentColor)) {
+          input.value = currentColor;
+        }
+        input.addEventListener("input", () => Neo.setColor(input.value));
+
+        label.appendChild(input);
+        footer.appendChild(label);
+      };
+
       document.addEventListener("DOMContentLoaded", () => {
         setTimeout(() => {
           if (!Neo.painter) {
@@ -275,6 +301,7 @@ function createFrameDocument(): string {
             return;
           }
           Neo.setStabilizeLevel(1);
+          addColorPicker();
           send("ready");
         }, 0);
       });
