@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <title>5chneo smoke fixture</title>
+  </head>
+  <body>
+    <form method="post">
+      <textarea name="MESSAGE"></textarea>
+      <input type="hidden" name="bbs" value="oekaki">
+      <input type="hidden" name="key" value="1">
+      <input type="hidden" name="oekaki_thread1">
+    </form>
+    <script>
+      window.alert = (message) => {
+        document.body.dataset.alert = String(message);
+      };
+    </script>
+    <script src="../dist/5chneo.js"></script>
+  </body>
+</html>

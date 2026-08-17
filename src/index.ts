@@ -4,37 +4,23 @@ const LOADER_ID = "fivech-neo-loader";
 const MAX_OEKAKI_SIZE = 128_000;
 const IMAGE_WIDTH = 500;
 const IMAGE_HEIGHT = 250;
+const NEO_MESSAGE_CHANNEL = "5chneo";
 
 const DEFAULT_NEO_BASE = "https://oekakibbs.moe/apps/neo/";
 
-type PaintBBSCallback = (event: string) => boolean | string | undefined;
-
-interface NeoPainter {
-  getImage(): HTMLCanvasElement | null;
+interface NeoFrameMessage {
+  channel: typeof NEO_MESSAGE_CHANNEL;
+  type: "ready" | "error" | "image";
+  message?: string;
+  dataUrl?: string;
+  width?: number;
+  height?: number;
 }
 
-interface NeoApi {
-  init(): boolean;
-  start(): void;
-  setStabilizeLevel(level: number): void;
-  params: Record<string, Record<string, string | boolean>>;
-  painter: NeoPainter;
-}
-
-interface NeoDocument extends Document {
-  neo?: NeoApi;
-  paintBBSCallback?: PaintBBSCallback;
-}
-
-declare global {
-  interface Window {
-    Neo?: NeoApi;
-  }
-}
-
-function getNeo(): NeoApi | undefined {
-  // NEO公式のLiveConnect互換インターフェースはdocument.neoにも公開される。
-  return window.Neo ?? (document as NeoDocument).neo;
+function isNeoFrameMessage(value: unknown): value is NeoFrameMessage {
+  if (!value || typeof value !== "object") return false;
+  const message = value as Partial<NeoFrameMessage>;
+  return message.channel === NEO_MESSAGE_CHANNEL && typeof message.type === "string";
 }
 
 function findPostForm(): HTMLFormElement | null {
@@ -169,7 +155,13 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
         font: 12px/1.5 sans-serif;
         margin: 8px 0 0;
       }
-      #${APP_ID} .fivech-neo-mount { min-height: 430px; }
+      #${APP_ID} .fivech-neo-frame {
+        border: 0;
+        display: block;
+        height: 460px;
+        width: 620px;
+      }
+      #${APP_ID} .fivech-neo-mount { min-height: 460px; }
       .fivech-neo-attachment {
         display: inline-block;
         font: 13px/1.5 sans-serif;
@@ -199,37 +191,135 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
   return { overlay, mount };
 }
 
-function loadStyle(url: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLLinkElement>(`link[href="${url}"]`);
-    if (existing) {
-      resolve();
-      return;
-    }
-
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = url;
-    link.addEventListener("load", () => resolve(), { once: true });
-    link.addEventListener("error", () => reject(new Error("NEOのCSSを読み込めませんでした。")), {
-      once: true,
-    });
-    document.head.appendChild(link);
+function createFrameDocument(): string {
+  const params = JSON.stringify({
+    paintbbs: {
+      image_width: String(IMAGE_WIDTH),
+      image_height: String(IMAGE_HEIGHT),
+      color_bk: "#ffffff",
+      color_bk2: "#ffffff",
+      neo_confirm_unload: true,
+      neo_disable_grid_touch_move: true,
+      neo_disable_turn_original_glitch: true,
+      neo_enable_zoom_out: true,
+      neo_visibility_change_title_rewrite: true,
+    },
   });
+
+  return `<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="${DEFAULT_NEO_BASE}neo.css">
+  <style>html,body{margin:0;padding:0;background:#f7f7f7;overflow:auto}</style>
+</head>
+<body>
+  <div class="neo-applet-paintbbs" data-width="600" data-height="430"></div>
+  <script data-cfasync="false" src="${DEFAULT_NEO_BASE}neo.js"><\/script>
+  <script>
+    (() => {
+      const send = (type, payload = {}) => {
+        parent.postMessage({ channel: "${NEO_MESSAGE_CHANNEL}", type, ...payload }, "*");
+      };
+
+      if (typeof Neo === "undefined") {
+        send("error", { message: "NEO本体を読み込めませんでした。" });
+        return;
+      }
+
+      Neo.params = ${params};
+      document.paintBBSCallback = (event) => {
+        if (event !== "check") return;
+        const canvas = Neo.painter && Neo.painter.getImage();
+        if (!canvas) {
+          send("error", { message: "PaintBBS NEOから画像を取得できませんでした。" });
+          return false;
+        }
+        send("image", {
+          dataUrl: canvas.toDataURL("image/png"),
+          width: canvas.width,
+          height: canvas.height,
+        });
+        return false;
+      };
+
+      document.addEventListener("DOMContentLoaded", () => {
+        setTimeout(() => {
+          if (!Neo.painter) {
+            send("error", { message: "PaintBBS NEOの描画領域を初期化できませんでした。" });
+            return;
+          }
+          Neo.setStabilizeLevel(1);
+          send("ready");
+        }, 0);
+      });
+    })();
+  <\/script>
+</body>
+</html>`;
 }
 
-function loadScript(url: string): Promise<void> {
+function startNeoFrame(
+  form: HTMLFormElement,
+  overlay: HTMLElement,
+  mount: HTMLElement,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.type = "text/javascript";
-    script.async = false;
-    script.dataset.cfasync = "false";
-    script.src = url;
-    script.addEventListener("load", () => resolve(), { once: true });
-    script.addEventListener("error", () => reject(new Error("NEO本体を読み込めませんでした。")), {
-      once: true,
-    });
-    document.head.appendChild(script);
+    const frame = document.createElement("iframe");
+    frame.className = "fivech-neo-frame";
+    frame.title = "PaintBBS NEO";
+
+    let ready = false;
+    const timeout = window.setTimeout(() => {
+      if (ready) return;
+      window.removeEventListener("message", onMessage);
+      reject(new Error("PaintBBS NEOの起動がタイムアウトしました。"));
+    }, 20_000);
+
+    const fail = (message: string): void => {
+      if (ready) {
+        alert(`5chneo: ${message}`);
+        return;
+      }
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", onMessage);
+      reject(new Error(message));
+    };
+
+    const onMessage = (event: MessageEvent<unknown>): void => {
+      if (event.source !== frame.contentWindow || !isNeoFrameMessage(event.data)) return;
+      const message = event.data;
+
+      if (message.type === "error") {
+        fail(message.message ?? "PaintBBS NEOでエラーが発生しました。");
+        return;
+      }
+      if (message.type === "ready") {
+        ready = true;
+        window.clearTimeout(timeout);
+        resolve();
+        return;
+      }
+      if (message.type !== "image" || !message.dataUrl) return;
+
+      const size = estimatedFiveChSize(message.dataUrl);
+      if (message.width !== IMAGE_WIDTH || message.height !== IMAGE_HEIGHT) {
+        alert(`画像サイズが${IMAGE_WIDTH}×${IMAGE_HEIGHT}pxではないため添付できません。`);
+        return;
+      }
+      if (size > MAX_OEKAKI_SIZE) {
+        alert(
+          `画像が5chのお絵かき上限を超えています（${formatKilobytes(size)} / ${formatKilobytes(MAX_OEKAKI_SIZE)}）。\n描画を簡略化してから、もう一度「投稿」を押してください。`,
+        );
+        return;
+      }
+      attachImage(form, overlay, message.dataUrl, size);
+    };
+
+    window.addEventListener("message", onMessage);
+    frame.srcdoc = createFrameDocument();
+    mount.appendChild(frame);
   });
 }
 
@@ -245,70 +335,10 @@ async function start(): Promise<void> {
     throw new Error("5chのお絵かき対応投稿フォームが見つかりません。スレッドのWebページで実行してください。");
   }
 
-  if (getNeo()) {
-    throw new Error("このページでは別のPaintBBS NEOがすでに起動しています。ページを再読み込みしてから実行してください。");
-  }
-
   const { overlay, mount } = createOverlay();
-  const applet = document.createElement("div");
-  applet.className = "neo-applet-paintbbs";
-  applet.dataset.width = "600";
-  applet.dataset.height = "430";
-  mount.appendChild(applet);
 
   try {
-    await Promise.all([
-      loadStyle(`${DEFAULT_NEO_BASE}neo.css`),
-      loadScript(`${DEFAULT_NEO_BASE}neo.js`),
-    ]);
-
-    const neo = getNeo();
-    if (!neo) throw new Error("PaintBBS NEOを初期化できませんでした。");
-
-    neo.params = {
-      paintbbs: {
-        image_width: String(IMAGE_WIDTH),
-        image_height: String(IMAGE_HEIGHT),
-        color_bk: "#ffffff",
-        color_bk2: "#ffffff",
-        neo_confirm_unload: true,
-        neo_disable_grid_touch_move: true,
-        neo_disable_turn_original_glitch: true,
-        neo_enable_zoom_out: true,
-        neo_visibility_change_title_rewrite: true,
-      },
-    };
-
-    const neoDocument = document as NeoDocument;
-    neoDocument.paintBBSCallback = (event) => {
-      if (event !== "check") return undefined;
-
-      const canvas = neo.painter.getImage();
-      if (!canvas) {
-        alert("PaintBBS NEOから画像を取得できませんでした。");
-        return false;
-      }
-      const dataUrl = canvas.toDataURL("image/png");
-      const size = estimatedFiveChSize(dataUrl);
-
-      if (canvas.width !== IMAGE_WIDTH || canvas.height !== IMAGE_HEIGHT) {
-        alert(`画像サイズが${IMAGE_WIDTH}×${IMAGE_HEIGHT}pxではないため添付できません。`);
-        return false;
-      }
-      if (size > MAX_OEKAKI_SIZE) {
-        alert(
-          `画像が5chのお絵かき上限を超えています（${formatKilobytes(size)} / ${formatKilobytes(MAX_OEKAKI_SIZE)}）。\n描画を簡略化してから、もう一度「投稿」を押してください。`,
-        );
-        return false;
-      }
-
-      attachImage(form, overlay, dataUrl, size);
-      return false;
-    };
-
-    if (!neo.init()) throw new Error("PaintBBS NEOの描画領域を初期化できませんでした。");
-    neo.start();
-    neo.setStabilizeLevel(1);
+    await startNeoFrame(form, overlay, mount);
   } catch (error) {
     overlay.remove();
     throw error;
