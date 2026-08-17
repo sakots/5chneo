@@ -10,11 +10,12 @@ const DEFAULT_NEO_BASE = "https://oekakibbs.moe/apps/neo/";
 
 interface NeoFrameMessage {
   channel: typeof NEO_MESSAGE_CHANNEL;
-  type: "ready" | "error" | "image";
+  type: "ready" | "error" | "image" | "fullscreen";
   message?: string;
   dataUrl?: string;
   width?: number;
   height?: number;
+  fullscreen?: boolean;
 }
 
 function isNeoFrameMessage(value: unknown): value is NeoFrameMessage {
@@ -167,8 +168,24 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
         font: 13px/1.5 sans-serif;
         margin: 6px 0;
       }
+      #${APP_ID}.fivech-neo-fullscreen { padding: 0; }
+      #${APP_ID}.fivech-neo-fullscreen .fivech-neo-panel {
+        border-radius: 0;
+        height: 100vh;
+        max-width: none;
+        min-width: 0;
+        padding: 0;
+        width: 100vw;
+      }
+      #${APP_ID}.fivech-neo-fullscreen .fivech-neo-header,
+      #${APP_ID}.fivech-neo-fullscreen .fivech-neo-help { display: none; }
+      #${APP_ID}.fivech-neo-fullscreen .fivech-neo-frame {
+        height: 100vh;
+        width: 100vw;
+      }
       @media (max-width: 680px) {
         #${APP_ID} { justify-content: flex-start; padding: 8px; }
+        #${APP_ID}.fivech-neo-fullscreen { padding: 0; }
       }
     </style>
     <div class="fivech-neo-panel" role="dialog" aria-modal="true" aria-label="PaintBBS NEO">
@@ -244,6 +261,10 @@ function createFrameDocument(): string {
         return false;
       };
 
+      document.addEventListener("neo:fullscreenchange", (event) => {
+        send("fullscreen", { fullscreen: Boolean(event.detail && event.detail.fullscreen) });
+      });
+
       document.addEventListener("DOMContentLoaded", () => {
         setTimeout(() => {
           if (!Neo.painter) {
@@ -299,6 +320,10 @@ function startNeoFrame(
         ready = true;
         window.clearTimeout(timeout);
         resolve();
+        return;
+      }
+      if (message.type === "fullscreen") {
+        overlay.classList.toggle("fivech-neo-fullscreen", message.fullscreen === true);
         return;
       }
       if (message.type !== "image" || !message.dataUrl) return;
