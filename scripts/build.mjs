@@ -5,6 +5,7 @@ const outputDirectory = "dist";
 const repository = "sakots/5chneo";
 const latestCommitApi = `https://api.github.com/repos/${repository}/commits/main`;
 const publishedScriptBase = `https://cdn.jsdelivr.net/gh/${repository}`;
+const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 
 await mkdir(outputDirectory, { recursive: true });
 
@@ -16,6 +17,9 @@ await build({
   minify: true,
   target: ["chrome109", "firefox115", "safari16"],
   legalComments: "none",
+  define: {
+    __FIVECH_NEO_VERSION__: JSON.stringify(packageJson.version),
+  },
 });
 
 const bundle = (await readFile(`${outputDirectory}/5chneo.js`, "utf8")).trim();

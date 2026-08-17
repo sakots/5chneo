@@ -1,6 +1,9 @@
+declare const __FIVECH_NEO_VERSION__: string;
+
 const APP_ID = "fivech-neo-overlay";
 const STATUS_ID = "fivech-neo-status";
 const LOADER_ID = "fivech-neo-loader";
+const APP_VERSION = __FIVECH_NEO_VERSION__;
 const MAX_OEKAKI_SIZE = 128_000;
 const IMAGE_WIDTH = 500;
 const IMAGE_HEIGHT = 250;
@@ -190,7 +193,7 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
     </style>
     <div class="fivech-neo-panel" role="dialog" aria-modal="true" aria-label="PaintBBS NEO">
       <div class="fivech-neo-header">
-        <span class="fivech-neo-title">PaintBBS NEO — 5chお絵かき</span>
+        <span class="fivech-neo-title">PaintBBS NEO — 5chお絵かき v${APP_VERSION}</span>
         <button type="button" class="fivech-neo-close">閉じる</button>
       </div>
       <div class="fivech-neo-mount"></div>
