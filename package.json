@@ -1,6 +1,6 @@
 {
   "name": "5chneo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "packageManager": "pnpm@11.15.1",
   "description": "5chのお絵かき機能でPaintBBS NEOを使うブックマークレット",

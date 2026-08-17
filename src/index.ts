@@ -10,6 +10,11 @@ const IMAGE_HEIGHT = 250;
 const NEO_MESSAGE_CHANNEL = "5chneo";
 
 const DEFAULT_NEO_BASE = "https://oekakibbs.moe/apps/neo/";
+const NEO_REPOSITORY = "funige/neo";
+const NEO_BRANCH = "master";
+const NEO_LATEST_COMMIT_API =
+  `https://api.github.com/repos/${NEO_REPOSITORY}/commits/${NEO_BRANCH}`;
+const NEO_CDN_BASE = `https://cdn.jsdelivr.net/gh/${NEO_REPOSITORY}`;
 
 interface NeoFrameMessage {
   channel: typeof NEO_MESSAGE_CHANNEL;
@@ -25,6 +30,28 @@ function isNeoFrameMessage(value: unknown): value is NeoFrameMessage {
   if (!value || typeof value !== "object") return false;
   const message = value as Partial<NeoFrameMessage>;
   return message.channel === NEO_MESSAGE_CHANNEL && typeof message.type === "string";
+}
+
+async function resolveLatestNeoBase(): Promise<string> {
+  try {
+    const response = await fetch(NEO_LATEST_COMMIT_API, {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/vnd.github+json" },
+      referrerPolicy: "no-referrer",
+    });
+    if (!response.ok) throw new Error(`GitHub API: ${response.status}`);
+
+    const result = (await response.json()) as { sha?: unknown };
+    if (typeof result.sha !== "string" || !/^[0-9a-f]{40}$/.test(result.sha)) {
+      throw new Error("GitHub APIからコミットSHAを取得できませんでした。");
+    }
+
+    return `${NEO_CDN_BASE}@${result.sha}/dist/`;
+  } catch (error) {
+    console.warn("5chneo: PaintBBS NEOの最新版を取得できないため既定の配信URLを使います。", error);
+    return DEFAULT_NEO_BASE;
+  }
 }
 
 function findPostForm(): HTMLFormElement | null {
@@ -211,7 +238,7 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
   return { overlay, mount };
 }
 
-function createFrameDocument(): string {
+function createFrameDocument(neoBase: string): string {
   const params = JSON.stringify({
     paintbbs: {
       image_width: String(IMAGE_WIDTH),
@@ -231,7 +258,7 @@ function createFrameDocument(): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="${DEFAULT_NEO_BASE}neo.css">
+  <link rel="stylesheet" href="${neoBase}neo.css">
   <style>
     html,body{margin:0;padding:0;background:#f7f7f7;overflow:auto}
     #fivech-neo-color-picker{align-items:center;display:inline-flex;gap:4px;margin-left:8px}
@@ -240,7 +267,7 @@ function createFrameDocument(): string {
 </head>
 <body>
   <div class="neo-applet-paintbbs" data-width="600" data-height="430"></div>
-  <script data-cfasync="false" src="${DEFAULT_NEO_BASE}neo.js"><\/script>
+  <script data-cfasync="false" src="${neoBase}neo.js"><\/script>
   <script>
     (() => {
       const send = (type, payload = {}) => {
@@ -315,6 +342,7 @@ function startNeoFrame(
   form: HTMLFormElement,
   overlay: HTMLElement,
   mount: HTMLElement,
+  neoBase: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const frame = document.createElement("iframe");
@@ -396,7 +424,7 @@ function startNeoFrame(
     };
 
     window.addEventListener("message", onMessage);
-    frame.srcdoc = createFrameDocument();
+    frame.srcdoc = createFrameDocument(neoBase);
     mount.appendChild(frame);
   });
 }
@@ -416,7 +444,8 @@ async function start(): Promise<void> {
   const { overlay, mount } = createOverlay();
 
   try {
-    await startNeoFrame(form, overlay, mount);
+    const neoBase = await resolveLatestNeoBase();
+    await startNeoFrame(form, overlay, mount, neoBase);
   } catch (error) {
     overlay.remove();
     throw error;

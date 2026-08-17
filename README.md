@@ -15,6 +15,7 @@ codex使用。
 5ch標準のお絵かき機能と同じく、画像は500×250px、上限は128KB相当です。
 PaintBBS NEOの「窓」を押すとiframeもブラウザ表示領域いっぱいに広がり、ページ表示へ戻すと元のサイズへ復帰します。
 PaintBBS NEO下部のカラーピッカーで色を選ぶと、現在選択中のパレットと描画色へ取り込まれます。
+PaintBBS NEO本体は起動時に公式GitHubリポジトリの最新コミットを確認し、そのコミットの `dist/neo.js` と `dist/neo.css` を読み込みます。GitHub APIへ接続できない場合は `https://oekakibbs.moe/apps/neo/` へフォールバックします。
 
 `bookmarklet-loader.txt` は実行時にGitHub上の最新コミットを確認するため、5chneoの更新後もブックマークのURLを変更する必要はありません。更新した `dist/5chneo.js` をリポジトリへpushしてから実行してください。
 
@@ -34,6 +35,10 @@ TypeScriptのソースは [`src/index.ts`](src/index.ts) です。ビルドす�
 画面に表示するバージョン番号は `package.json` の `version` です。値を変更して `pnpm build` すると、タイトルの末尾へ `vX.Y.Z` の形式で埋め込まれます。
 
 ## 更新履歴
+
+### [2026/08/07] v0.3.0
+
+- neoを直接Githubから読み込む形に変更ｓ
 
 ### [2026/08/07] v0.2.0
 
