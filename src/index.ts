@@ -292,6 +292,28 @@ function startNeoFrame(
     frame.title = "PaintBBS NEO";
 
     let ready = false;
+    let fullscreenObserver: MutationObserver | null = null;
+
+    const observeFullscreenState = (): void => {
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      const windowView = frameDocument?.getElementById("neo-windowView");
+      if (!frameWindow || !windowView) return;
+
+      const sync = (): void => {
+        const fullscreen = frameWindow.getComputedStyle(windowView).display !== "none";
+        overlay.classList.toggle("fivech-neo-fullscreen", fullscreen);
+      };
+
+      fullscreenObserver?.disconnect();
+      fullscreenObserver = new MutationObserver(sync);
+      fullscreenObserver.observe(windowView, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+      sync();
+    };
+
     const timeout = window.setTimeout(() => {
       if (ready) return;
       window.removeEventListener("message", onMessage);
@@ -319,6 +341,7 @@ function startNeoFrame(
       if (message.type === "ready") {
         ready = true;
         window.clearTimeout(timeout);
+        observeFullscreenState();
         resolve();
         return;
       }

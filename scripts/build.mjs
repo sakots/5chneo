@@ -19,7 +19,7 @@ await build({
 
 const bundle = (await readFile(`${outputDirectory}/5chneo.js`, "utf8")).trim();
 const bookmarklet = `javascript:${encodeURIComponent(bundle)}`;
-const loader = `javascript:(()=>{const o=document.getElementById('fivech-neo-overlay');if(o){o.style.display='flex';return}if(document.getElementById('fivech-neo-loader'))return;const s=document.createElement('script');s.id='fivech-neo-loader';s.src='${publishedScript}?v=4';s.onerror=()=>{s.remove();alert('5chneoの読み込みに失敗しました。')};document.head.appendChild(s)})()`;
+const loader = `javascript:(()=>{const o=document.getElementById('fivech-neo-overlay');if(o){o.style.display='flex';return}if(document.getElementById('fivech-neo-loader'))return;const s=document.createElement('script');s.id='fivech-neo-loader';s.src='${publishedScript}?v=5';s.onerror=()=>{s.remove();alert('5chneoの読み込みに失敗しました。')};document.head.appendChild(s)})()`;
 
 await writeFile(`${outputDirectory}/bookmarklet.txt`, `${bookmarklet}\n`);
 await writeFile(`${outputDirectory}/bookmarklet-loader.txt`, `${loader}\n`);
