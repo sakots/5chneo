@@ -22,6 +22,7 @@ interface NeoApi {
 }
 
 interface NeoDocument extends Document {
+  neo?: NeoApi;
   paintBBSCallback?: PaintBBSCallback;
 }
 
@@ -32,8 +33,8 @@ declare global {
 }
 
 function getNeo(): NeoApi | undefined {
-  // 外部スクリプトの読み込み前後で値が変わるため、関数越しに参照する。
-  return window.Neo;
+  // NEO公式のLiveConnect互換インターフェースはdocument.neoにも公開される。
+  return window.Neo ?? (document as NeoDocument).neo;
 }
 
 function findPostForm(): HTMLFormElement | null {
@@ -220,6 +221,9 @@ function loadStyle(url: string): Promise<void> {
 function loadScript(url: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.async = false;
+    script.dataset.cfasync = "false";
     script.src = url;
     script.addEventListener("load", () => resolve(), { once: true });
     script.addEventListener("error", () => reject(new Error("NEO本体を読み込めませんでした。")), {
