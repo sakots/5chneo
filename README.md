@@ -35,6 +35,12 @@ pnpm build
 TypeScriptのソースは [`src/index.ts`](src/index.ts) です。ビルドすると、配信用スクリプトとブックマークレットが `dist/` に生成されます。
 画面に表示するバージョン番号は `package.json` の `version` です。値を変更して `pnpm build` すると、タイトルの末尾へ `vX.Y.Z` の形式で埋め込まれます。
 
+## 動作を確認している環境
+
+- windows11 Mozilla Firefox 153.0.4
+- windows11 Google chrome 151.0.7922.140
+- windows11 Microsoft Edge 151.0.4129.93
+
 ## 更新履歴
 
 ### [2026/08/19] v0.4.0
