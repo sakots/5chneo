@@ -625,6 +625,12 @@ function createFrameDocument(neoBase: string): string {
         button.id = "fivech-neo-tool-side";
         button.type = "button";
 
+        const setToolSide = (useLeftSide) => {
+          Neo.setToolSide(useLeftSide);
+          const headerButtons = document.getElementById("neo-headerButtons");
+          if (headerButtons) headerButtons.style.left = useLeftSide ? "60px" : "5px";
+        };
+
         const updateButton = () => {
           const destination = Neo.toolSide ? "右" : "左";
           button.textContent = "ツールを" + destination + "へ";
@@ -632,18 +638,20 @@ function createFrameDocument(neoBase: string): string {
           button.setAttribute("aria-label", button.title);
         };
 
+        let initialToolSide = Boolean(Neo.toolSide);
         try {
           const storedSide = localStorage.getItem("${TOOL_SIDE_STORAGE_KEY}");
           if (storedSide === "left" || storedSide === "right") {
-            Neo.setToolSide(storedSide === "left");
+            initialToolSide = storedSide === "left";
           }
         } catch (error) {
           send("debug", { event: "tool-side-storage-read-failed", detail: describeError(error) });
         }
+        setToolSide(initialToolSide);
 
         button.addEventListener("click", () => {
           const useLeftSide = !Neo.toolSide;
-          Neo.setToolSide(useLeftSide);
+          setToolSide(useLeftSide);
           try {
             localStorage.setItem("${TOOL_SIDE_STORAGE_KEY}", useLeftSide ? "left" : "right");
           } catch (error) {
