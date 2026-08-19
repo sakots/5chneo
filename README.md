@@ -38,7 +38,7 @@ TypeScriptのソースは [`src/index.ts`](src/index.ts) です。ビルドす�
 
 ### [2026/08/07] v0.3.0
 
-- neoを直接Githubから読み込む形に変更ｓ
+- neoを直接Githubから読み込む形に変更
 
 ### [2026/08/07] v0.2.0
 
