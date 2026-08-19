@@ -1,6 +1,7 @@
 declare const __FIVECH_NEO_VERSION__: string;
 
 const APP_ID = "fivech-neo-overlay";
+const DEBUG_DIALOG_ID = "fivech-neo-debug-dialog";
 const STATUS_ID = "fivech-neo-status";
 const LOADER_ID = "fivech-neo-loader";
 const APP_VERSION = __FIVECH_NEO_VERSION__;
@@ -9,6 +10,8 @@ const IMAGE_WIDTH = 500;
 const IMAGE_HEIGHT = 250;
 const NEO_MESSAGE_CHANNEL = "5chneo";
 const TOOL_SIDE_STORAGE_KEY = "5chneo:tool-side";
+const DEBUG_STORAGE_TEST_KEY = "5chneo:debug-storage-test";
+const MAX_DIAGNOSTIC_EVENTS = 200;
 
 const DEFAULT_NEO_BASE = "https://oekakibbs.moe/apps/neo/";
 const NEO_REPOSITORY = "funige/neo";
@@ -19,12 +22,46 @@ const NEO_CDN_BASE = `https://cdn.jsdelivr.net/gh/${NEO_REPOSITORY}`;
 
 interface NeoFrameMessage {
   channel: typeof NEO_MESSAGE_CHANNEL;
-  type: "ready" | "error" | "image" | "fullscreen";
+  type: "ready" | "error" | "image" | "fullscreen" | "debug";
   message?: string;
   dataUrl?: string;
   width?: number;
   height?: number;
   fullscreen?: boolean;
+  event?: string;
+  detail?: string;
+  neoVersion?: string;
+  toolSide?: "left" | "right";
+}
+
+interface DiagnosticEvent {
+  elapsedMs: number;
+  event: string;
+  detail?: string;
+}
+
+const diagnosticStartedAt = Date.now();
+const diagnosticEvents: DiagnosticEvent[] = [];
+let diagnosticStage = "script-loaded";
+let diagnosticNeoBase: string | null = null;
+
+function formatError(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
+}
+
+function recordDiagnostic(event: string, detail?: string): void {
+  if (diagnosticEvents.length >= MAX_DIAGNOSTIC_EVENTS) diagnosticEvents.shift();
+  diagnosticEvents.push({
+    elapsedMs: Date.now() - diagnosticStartedAt,
+    event,
+    ...(detail ? { detail } : {}),
+  });
+}
+
+function setDiagnosticStage(stage: string, detail?: string): void {
+  diagnosticStage = stage;
+  recordDiagnostic(stage, detail);
 }
 
 function isNeoFrameMessage(value: unknown): value is NeoFrameMessage {
@@ -34,6 +71,7 @@ function isNeoFrameMessage(value: unknown): value is NeoFrameMessage {
 }
 
 async function resolveLatestNeoBase(): Promise<string> {
+  setDiagnosticStage("resolving-neo-source");
   try {
     const response = await fetch(NEO_LATEST_COMMIT_API, {
       cache: "no-store",
@@ -48,10 +86,14 @@ async function resolveLatestNeoBase(): Promise<string> {
       throw new Error("GitHub APIからコミットSHAを取得できませんでした。");
     }
 
-    return `${NEO_CDN_BASE}@${result.sha}/dist/`;
+    diagnosticNeoBase = `${NEO_CDN_BASE}@${result.sha}/dist/`;
+    recordDiagnostic("neo-source-resolved", result.sha);
+    return diagnosticNeoBase;
   } catch (error) {
     console.warn("5chneo: PaintBBS NEOの最新版を取得できないため既定の配信URLを使います。", error);
-    return DEFAULT_NEO_BASE;
+    diagnosticNeoBase = DEFAULT_NEO_BASE;
+    recordDiagnostic("neo-source-fallback", formatError(error));
+    return diagnosticNeoBase;
   }
 }
 
@@ -67,6 +109,236 @@ function findPostForm(): HTMLFormElement | null {
         form.querySelector('[name="key"]'),
     ) ?? null
   );
+}
+
+function safeUrl(value: string): string {
+  try {
+    const url = new URL(value, location.href);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "(invalid URL)";
+  }
+}
+
+function testWebStorage(kind: "localStorage" | "sessionStorage"): string {
+  let storage: Storage | undefined;
+  try {
+    storage = kind === "localStorage" ? window.localStorage : window.sessionStorage;
+    storage.setItem(DEBUG_STORAGE_TEST_KEY, "ok");
+    return storage.getItem(DEBUG_STORAGE_TEST_KEY) === "ok" ? "available" : "read-back failed";
+  } catch (error) {
+    return `unavailable (${formatError(error)})`;
+  } finally {
+    try {
+      storage?.removeItem(DEBUG_STORAGE_TEST_KEY);
+    } catch {}
+  }
+}
+
+function buildDebugReport(): string {
+  const form = findPostForm();
+  const oekakiInput = form?.querySelector<HTMLInputElement>('input[name="oekaki"]');
+  const oekakiValue = oekakiInput?.value ?? "";
+  const frame = document.querySelector<HTMLIFrameElement>(`#${APP_ID} .fivech-neo-frame`);
+  const frameWindow = frame?.contentWindow as
+    | (Window & {
+        Neo?: { version?: unknown; toolSide?: unknown; painter?: unknown };
+      })
+    | null
+    | undefined;
+  const neo = frameWindow?.Neo;
+  const visualViewport = window.visualViewport;
+  const eventLines = diagnosticEvents.length
+    ? diagnosticEvents.map(({ elapsedMs, event, detail }) =>
+        `+${elapsedMs}ms ${event}${detail ? ` | ${detail.replace(/\s+/g, " ")}` : ""}`,
+      )
+    : ["(none)"];
+
+  return [
+    "5chneo debug report",
+    `generatedAt: ${new Date().toISOString()}`,
+    `appVersion: ${APP_VERSION}`,
+    `stage: ${diagnosticStage}`,
+    `elapsedMs: ${Date.now() - diagnosticStartedAt}`,
+    "",
+    "[page]",
+    `url: ${safeUrl(location.href)}`,
+    `documentReadyState: ${document.readyState}`,
+    `visibilityState: ${document.visibilityState}`,
+    `secureContext: ${window.isSecureContext}`,
+    `online: ${navigator.onLine}`,
+    "",
+    "[browser]",
+    `userAgent: ${navigator.userAgent}`,
+    `platform: ${navigator.platform || "(empty)"}`,
+    `languages: ${navigator.languages.join(", ") || "(empty)"}`,
+    `timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone || "(unknown)"}`,
+    `cookieEnabled: ${navigator.cookieEnabled}`,
+    `maxTouchPoints: ${navigator.maxTouchPoints}`,
+    `screen: ${screen.width}x${screen.height}`,
+    `viewport: ${window.innerWidth}x${window.innerHeight}`,
+    `visualViewport: ${visualViewport ? `${visualViewport.width}x${visualViewport.height} scale=${visualViewport.scale}` : "unavailable"}`,
+    `devicePixelRatio: ${window.devicePixelRatio}`,
+    "",
+    "[capabilities]",
+    `localStorage: ${testWebStorage("localStorage")}`,
+    `sessionStorage: ${testWebStorage("sessionStorage")}`,
+    `clipboardWrite: ${Boolean(navigator.clipboard?.writeText)}`,
+    `legacyCopy: ${document.queryCommandSupported?.("copy") ?? false}`,
+    `canvas2d: ${Boolean(document.createElement("canvas").getContext("2d"))}`,
+    `iframeSrcdoc: ${"srcdoc" in document.createElement("iframe")}`,
+    "",
+    "[5ch form]",
+    `formFound: ${Boolean(form)}`,
+    `formCount: ${document.forms.length}`,
+    `formAction: ${form ? safeUrl(form.action) : "(none)"}`,
+    `formMethod: ${form?.method.toUpperCase() || "(none)"}`,
+    `formEncoding: ${form?.enctype || "(none)"}`,
+    `messageField: ${Boolean(form?.querySelector('[name="MESSAGE"]'))}`,
+    `bbsField: ${Boolean(form?.querySelector('[name="bbs"]'))}`,
+    `keyField: ${Boolean(form?.querySelector('[name="key"]'))}`,
+    `standardOekakiField: ${Boolean(form?.querySelector('[name="oekaki_thread1"]'))}`,
+    `neoOekakiField: ${Boolean(oekakiInput)}`,
+    `neoImageDataFormat: ${oekakiValue ? (oekakiValue.startsWith("data:image/png;base64,") ? "png data URL" : "unexpected") : "(none)"}`,
+    `neoImageEstimatedBytes: ${oekakiValue ? estimatedFiveChSize(oekakiValue) : 0}`,
+    "",
+    "[PaintBBS NEO]",
+    `sourceBase: ${diagnosticNeoBase ?? "(not resolved)"}`,
+    `iframeFound: ${Boolean(frame)}`,
+    `iframeReadyState: ${frame?.contentDocument?.readyState ?? "(unavailable)"}`,
+    `neoGlobal: ${Boolean(neo)}`,
+    `neoVersion: ${typeof neo?.version === "string" ? neo.version : "(unknown)"}`,
+    `neoPainter: ${Boolean(neo?.painter)}`,
+    `toolSide: ${neo ? (neo.toolSide ? "left" : "right") : "(unknown)"}`,
+    "",
+    "[events]",
+    ...eventLines,
+    "",
+  ].join("\n");
+}
+
+function showDebugDialog(reason?: string): void {
+  document.getElementById(DEBUG_DIALOG_ID)?.remove();
+
+  const dialog = document.createElement("div");
+  dialog.id = DEBUG_DIALOG_ID;
+  dialog.innerHTML = `
+    <style>
+      #${DEBUG_DIALOG_ID} {
+        align-items: center;
+        background: rgb(0 0 0 / 72%);
+        box-sizing: border-box;
+        display: flex;
+        inset: 0;
+        justify-content: center;
+        padding: 16px;
+        position: fixed;
+        z-index: 2147483647;
+      }
+      #${DEBUG_DIALOG_ID} .fivech-neo-debug-panel {
+        background: #f7f7f7;
+        border-radius: 6px;
+        box-shadow: 0 8px 32px rgb(0 0 0 / 45%);
+        box-sizing: border-box;
+        color: #222;
+        font: 13px/1.5 sans-serif;
+        max-height: calc(100vh - 32px);
+        max-width: 760px;
+        overflow: auto;
+        padding: 14px;
+        width: 100%;
+      }
+      #${DEBUG_DIALOG_ID} h2 { font: 700 16px/1.4 sans-serif; margin: 0 0 6px; }
+      #${DEBUG_DIALOG_ID} p { margin: 4px 0 8px; }
+      #${DEBUG_DIALOG_ID} textarea {
+        background: #fff;
+        border: 1px solid #888;
+        box-sizing: border-box;
+        color: #111;
+        display: block;
+        font: 12px/1.4 monospace;
+        height: min(55vh, 460px);
+        margin: 8px 0;
+        padding: 8px;
+        resize: vertical;
+        width: 100%;
+      }
+      #${DEBUG_DIALOG_ID} .fivech-neo-debug-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+      #${DEBUG_DIALOG_ID} button {
+        appearance: auto;
+        background: #eee;
+        border: 1px solid #888;
+        border-radius: 3px;
+        color: #111;
+        cursor: pointer;
+        font: 13px/1.4 sans-serif;
+        margin: 0;
+        padding: 3px 9px;
+        text-transform: none;
+      }
+      #${DEBUG_DIALOG_ID} .fivech-neo-debug-status { min-height: 1.5em; }
+    </style>
+    <div class="fivech-neo-debug-panel" role="dialog" aria-modal="true" aria-labelledby="fivech-neo-debug-title">
+      <h2 id="fivech-neo-debug-title">5chneo デバッグ情報</h2>
+      <p class="fivech-neo-debug-reason"></p>
+      <p>投稿本文・Cookieの内容・描画画像は含まれません。内容を確認してから共有してください。</p>
+      <textarea readonly spellcheck="false" aria-label="デバッグ情報"></textarea>
+      <p class="fivech-neo-debug-status" role="status"></p>
+      <div class="fivech-neo-debug-actions">
+        <button type="button" data-action="refresh">更新</button>
+        <button type="button" data-action="copy">コピー</button>
+        <button type="button" data-action="download">ファイル保存</button>
+        <button type="button" data-action="close">閉じる</button>
+      </div>
+    </div>`;
+
+  const textarea = dialog.querySelector<HTMLTextAreaElement>("textarea");
+  const status = dialog.querySelector<HTMLElement>(".fivech-neo-debug-status");
+  const reasonElement = dialog.querySelector<HTMLElement>(".fivech-neo-debug-reason");
+  if (!textarea || !status || !reasonElement) return;
+
+  reasonElement.textContent = reason ? `エラー: ${reason}` : "現在の診断情報です。";
+  const refresh = (): void => {
+    textarea.value = buildDebugReport();
+    status.textContent = "情報を更新しました。";
+  };
+
+  dialog.querySelector<HTMLButtonElement>('[data-action="refresh"]')?.addEventListener("click", refresh);
+  dialog.querySelector<HTMLButtonElement>('[data-action="copy"]')?.addEventListener("click", async () => {
+    textarea.value = buildDebugReport();
+    try {
+      await navigator.clipboard.writeText(textarea.value);
+      status.textContent = "クリップボードへコピーしました。";
+    } catch {
+      textarea.focus();
+      textarea.select();
+      try {
+        status.textContent = document.execCommand("copy")
+          ? "クリップボードへコピーしました。"
+          : "自動コピーできませんでした。選択中の内容を手動でコピーしてください。";
+      } catch {
+        status.textContent = "自動コピーできませんでした。選択中の内容を手動でコピーしてください。";
+      }
+    }
+  });
+  dialog.querySelector<HTMLButtonElement>('[data-action="download"]')?.addEventListener("click", () => {
+    textarea.value = buildDebugReport();
+    const blob = new Blob([textarea.value], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    link.href = url;
+    link.download = `5chneo-debug-${timestamp}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    status.textContent = "デバッグ情報をファイルへ書き出しました。";
+  });
+  dialog.querySelector<HTMLButtonElement>('[data-action="close"]')?.addEventListener("click", () => dialog.remove());
+
+  textarea.value = buildDebugReport();
+  document.body.appendChild(dialog);
 }
 
 function estimatedFiveChSize(dataUrl: string): number {
@@ -131,6 +403,7 @@ function attachImage(
   }
 
   input.value = dataUrl;
+  recordDiagnostic("image-attached", `${size} bytes`);
   updateAttachmentStatus(form, overlay, size);
   setOverlayVisible(overlay, false);
 }
@@ -168,6 +441,8 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
         margin-bottom: 8px;
       }
       #${APP_ID} .fivech-neo-title { font-weight: 700; }
+      #${APP_ID} .fivech-neo-header-actions { display: flex; gap: 6px; }
+      #${APP_ID} .fivech-neo-debug,
       #${APP_ID} .fivech-neo-close,
       .fivech-neo-button {
         appearance: auto;
@@ -222,7 +497,10 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
     <div class="fivech-neo-panel" role="dialog" aria-modal="true" aria-label="PaintBBS NEO">
       <div class="fivech-neo-header">
         <span class="fivech-neo-title">PaintBBS NEO — 5chお絵かき v${APP_VERSION}</span>
-        <button type="button" class="fivech-neo-close">閉じる</button>
+        <div class="fivech-neo-header-actions">
+          <button type="button" class="fivech-neo-debug">デバッグ情報</button>
+          <button type="button" class="fivech-neo-close">閉じる</button>
+        </div>
       </div>
       <div class="fivech-neo-mount"></div>
       <p class="fivech-neo-help">描き終えたらPaintBBS NEO内の「投稿」ボタンを押してください。画像を5chの投稿フォームへ添付します。</p>
@@ -231,6 +509,9 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
   overlay
     .querySelector<HTMLButtonElement>(".fivech-neo-close")
     ?.addEventListener("click", () => setOverlayVisible(overlay, false));
+  overlay
+    .querySelector<HTMLButtonElement>(".fivech-neo-debug")
+    ?.addEventListener("click", () => showDebugDialog());
 
   const mount = overlay.querySelector<HTMLDivElement>(".fivech-neo-mount");
   if (!mount) throw new Error("PaintBBS NEOの表示領域を作成できませんでした。");
@@ -275,6 +556,19 @@ function createFrameDocument(neoBase: string): string {
       const send = (type, payload = {}) => {
         parent.postMessage({ channel: "${NEO_MESSAGE_CHANNEL}", type, ...payload }, "*");
       };
+
+      const describeError = (value) => {
+        const message = value && typeof value.message === "string"
+          ? (typeof value.name === "string" ? value.name + ": " : "") + value.message
+          : String(value);
+        return message.slice(0, 500);
+      };
+      window.addEventListener("error", (event) => {
+        send("debug", { event: "frame-error", detail: describeError(event.error || event.message) });
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        send("debug", { event: "frame-unhandled-rejection", detail: describeError(event.reason) });
+      });
 
       if (typeof Neo === "undefined") {
         send("error", { message: "NEO本体を読み込めませんでした。" });
@@ -343,14 +637,18 @@ function createFrameDocument(neoBase: string): string {
           if (storedSide === "left" || storedSide === "right") {
             Neo.setToolSide(storedSide === "left");
           }
-        } catch {}
+        } catch (error) {
+          send("debug", { event: "tool-side-storage-read-failed", detail: describeError(error) });
+        }
 
         button.addEventListener("click", () => {
           const useLeftSide = !Neo.toolSide;
           Neo.setToolSide(useLeftSide);
           try {
             localStorage.setItem("${TOOL_SIDE_STORAGE_KEY}", useLeftSide ? "left" : "right");
-          } catch {}
+          } catch (error) {
+            send("debug", { event: "tool-side-storage-write-failed", detail: describeError(error) });
+          }
           updateButton();
         });
 
@@ -367,7 +665,10 @@ function createFrameDocument(neoBase: string): string {
           Neo.setStabilizeLevel(1);
           addColorPicker();
           addToolSideButton();
-          send("ready");
+          send("ready", {
+            neoVersion: String(Neo.version || "unknown"),
+            toolSide: Neo.toolSide ? "left" : "right",
+          });
         }, 0);
       });
     })();
@@ -383,6 +684,7 @@ function startNeoFrame(
   neoBase: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    setDiagnosticStage("starting-neo-frame", neoBase);
     const frame = document.createElement("iframe");
     frame.className = "fivech-neo-frame";
     frame.title = "PaintBBS NEO";
@@ -413,12 +715,15 @@ function startNeoFrame(
     const timeout = window.setTimeout(() => {
       if (ready) return;
       window.removeEventListener("message", onMessage);
+      recordDiagnostic("neo-frame-timeout");
       reject(new Error("PaintBBS NEOの起動がタイムアウトしました。"));
     }, 20_000);
 
     const fail = (message: string): void => {
+      recordDiagnostic("neo-frame-error", message);
       if (ready) {
         alert(`5chneo: ${message}`);
+        showDebugDialog(message);
         return;
       }
       window.clearTimeout(timeout);
@@ -430,6 +735,10 @@ function startNeoFrame(
       if (event.source !== frame.contentWindow || !isNeoFrameMessage(event.data)) return;
       const message = event.data;
 
+      if (message.type === "debug") {
+        recordDiagnostic(message.event ?? "neo-frame-debug", message.detail);
+        return;
+      }
       if (message.type === "error") {
         fail(message.message ?? "PaintBBS NEOでエラーが発生しました。");
         return;
@@ -438,21 +747,32 @@ function startNeoFrame(
         ready = true;
         window.clearTimeout(timeout);
         observeFullscreenState();
+        setDiagnosticStage(
+          "ready",
+          `NEO ${message.neoVersion ?? "unknown"}, tools ${message.toolSide ?? "unknown"}`,
+        );
         resolve();
         return;
       }
       if (message.type === "fullscreen") {
+        recordDiagnostic("fullscreen-change", String(message.fullscreen === true));
         overlay.classList.toggle("fivech-neo-fullscreen", message.fullscreen === true);
         return;
       }
       if (message.type !== "image" || !message.dataUrl) return;
 
       const size = estimatedFiveChSize(message.dataUrl);
+      recordDiagnostic(
+        "image-received",
+        `${message.width ?? "unknown"}x${message.height ?? "unknown"}, ${size} bytes`,
+      );
       if (message.width !== IMAGE_WIDTH || message.height !== IMAGE_HEIGHT) {
+        recordDiagnostic("image-rejected", "unexpected dimensions");
         alert(`画像サイズが${IMAGE_WIDTH}×${IMAGE_HEIGHT}pxではないため添付できません。`);
         return;
       }
       if (size > MAX_OEKAKI_SIZE) {
+        recordDiagnostic("image-rejected", "size limit exceeded");
         alert(
           `画像が5chのお絵かき上限を超えています（${formatKilobytes(size)} / ${formatKilobytes(MAX_OEKAKI_SIZE)}）。\n描画を簡略化してから、もう一度「投稿」を押してください。`,
         );
@@ -468,8 +788,10 @@ function startNeoFrame(
 }
 
 async function start(): Promise<void> {
+  setDiagnosticStage("checking-page");
   const existingOverlay = document.getElementById(APP_ID);
   if (existingOverlay) {
+    setDiagnosticStage("existing-overlay-shown");
     setOverlayVisible(existingOverlay, true);
     return;
   }
@@ -478,22 +800,36 @@ async function start(): Promise<void> {
   if (!form || !form.querySelector('[name="oekaki_thread1"]')) {
     throw new Error("5chのお絵かき対応投稿フォームが見つかりません。スレッドのWebページで実行してください。");
   }
+  recordDiagnostic("post-form-found", safeUrl(form.action));
+  form.addEventListener(
+    "submit",
+    () => {
+      const input = form.querySelector<HTMLInputElement>('input[name="oekaki"]');
+      recordDiagnostic("post-form-submit", input?.value ? "NEO image attached" : "NEO image not attached");
+    },
+    { capture: true },
+  );
 
   const { overlay, mount } = createOverlay();
+  setDiagnosticStage("overlay-created");
 
   try {
     const neoBase = await resolveLatestNeoBase();
     await startNeoFrame(form, overlay, mount, neoBase);
   } catch (error) {
+    recordDiagnostic("startup-error", formatError(error));
     overlay.remove();
     throw error;
   }
 }
 
+recordDiagnostic("script-start");
 void start().catch((error: unknown) => {
   document.getElementById(LOADER_ID)?.remove();
   const message = error instanceof Error ? error.message : String(error);
+  setDiagnosticStage("failed", formatError(error));
   alert(`5chneo: ${message}`);
+  showDebugDialog(message);
 });
 
 export {};
