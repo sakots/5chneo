@@ -629,6 +629,8 @@ function createFrameDocument(neoBase: string): string {
           Neo.setToolSide(useLeftSide);
           const headerButtons = document.getElementById("neo-headerButtons");
           if (headerButtons) headerButtons.style.left = useLeftSide ? "60px" : "5px";
+          const footerButtons = document.getElementById("neo-footerButtons");
+          if (footerButtons) footerButtons.style.left = useLeftSide ? "60px" : "5px";
         };
 
         const updateButton = () => {
