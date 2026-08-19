@@ -8,6 +8,7 @@ const MAX_OEKAKI_SIZE = 128_000;
 const IMAGE_WIDTH = 500;
 const IMAGE_HEIGHT = 250;
 const NEO_MESSAGE_CHANNEL = "5chneo";
+const TOOL_SIDE_STORAGE_KEY = "5chneo:tool-side";
 
 const DEFAULT_NEO_BASE = "https://oekakibbs.moe/apps/neo/";
 const NEO_REPOSITORY = "funige/neo";
@@ -263,6 +264,7 @@ function createFrameDocument(neoBase: string): string {
     html,body{margin:0;padding:0;background:#f7f7f7;overflow:auto}
     #fivech-neo-color-picker{align-items:center;display:inline-flex;gap:4px;margin-left:8px}
     #fivech-neo-color-picker input[type="color"]{appearance:auto;background:transparent;border:0;cursor:pointer;height:22px;padding:0;width:30px}
+    #fivech-neo-tool-side{appearance:auto;background:#eee;border:1px solid #888;border-radius:3px;color:#111;cursor:pointer;font:12px/1.4 sans-serif;margin-left:8px;padding:1px 6px;vertical-align:middle}
   </style>
 </head>
 <body>
@@ -321,6 +323,41 @@ function createFrameDocument(neoBase: string): string {
         footer.appendChild(label);
       };
 
+      const addToolSideButton = () => {
+        const footer = document.getElementById("neo-footerButtons");
+        if (!footer || document.getElementById("fivech-neo-tool-side")) return;
+
+        const button = document.createElement("button");
+        button.id = "fivech-neo-tool-side";
+        button.type = "button";
+
+        const updateButton = () => {
+          const destination = Neo.toolSide ? "右" : "左";
+          button.textContent = "ツールを" + destination + "へ";
+          button.title = "ツールバーをキャンバスの" + destination + "側へ移動する";
+          button.setAttribute("aria-label", button.title);
+        };
+
+        try {
+          const storedSide = localStorage.getItem("${TOOL_SIDE_STORAGE_KEY}");
+          if (storedSide === "left" || storedSide === "right") {
+            Neo.setToolSide(storedSide === "left");
+          }
+        } catch {}
+
+        button.addEventListener("click", () => {
+          const useLeftSide = !Neo.toolSide;
+          Neo.setToolSide(useLeftSide);
+          try {
+            localStorage.setItem("${TOOL_SIDE_STORAGE_KEY}", useLeftSide ? "left" : "right");
+          } catch {}
+          updateButton();
+        });
+
+        updateButton();
+        footer.appendChild(button);
+      };
+
       document.addEventListener("DOMContentLoaded", () => {
         setTimeout(() => {
           if (!Neo.painter) {
@@ -329,6 +366,7 @@ function createFrameDocument(neoBase: string): string {
           }
           Neo.setStabilizeLevel(1);
           addColorPicker();
+          addToolSideButton();
           send("ready");
         }, 0);
       });
