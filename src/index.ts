@@ -465,10 +465,10 @@ function createOverlay(): { overlay: HTMLDivElement; mount: HTMLDivElement } {
       #${APP_ID} .fivech-neo-frame {
         border: 0;
         display: block;
-        height: 460px;
+        height: 470px;
         width: 620px;
       }
-      #${APP_ID} .fivech-neo-mount { min-height: 460px; }
+      #${APP_ID} .fivech-neo-mount { min-height: 470px; }
       .fivech-neo-attachment {
         display: inline-block;
         font: 13px/1.5 sans-serif;
