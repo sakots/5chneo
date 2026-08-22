@@ -542,7 +542,7 @@ function createFrameDocument(neoBase: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="${neoBase}neo.css">
   <style>
-    html,body{margin:0;padding:0;background:#f7f7f7;overflow:auto}
+    html,body{width:100%;height:100%;margin:0;padding:0;background:#f7f7f7;overflow:hidden}
     #fivech-neo-color-picker{align-items:center;display:inline-flex;gap:4px;margin-left:8px}
     #fivech-neo-color-picker input[type="color"]{appearance:auto;background:transparent;border:0;cursor:pointer;height:22px;padding:0;width:30px}
     #fivech-neo-tool-side{appearance:auto;background:#eee;border:1px solid #888;border-radius:3px;color:#111;cursor:pointer;font:12px/1.4 sans-serif;margin-left:8px;padding:1px 6px;vertical-align:middle}
